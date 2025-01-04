@@ -1,0 +1,24 @@
+---
+title: "fmm"
+author: "Luong Vuong"
+format: pdf
+editor: visual
+---
+
+# Install CAMAN
+```{r}
+library(CAMAN)
+```
+
+# Assess over dispersion
+
+- approximate the original binomial distribution with the poisson distribution with parameter n×p. This can be done if n is large (e.g. n>100) and p is small such that n×p <10. Here n×p is essentially the number of successes in the binomial distribution. 
+- We can then assess overdispersion by calculating the variance of the observed number of successes and comparing it to the model variance (n×p). If the observed variance is much larger than the model variance, then we can conclude that there is overdispersion.
+
+# Fit fmm - VEM - estimate the NPMLE of the number of support points
+
+# Assess gradient function to make sure that it is the NPMLE
+
+# Classify data into components/clusters
+
+# Test covariate on the components
