@@ -5,20 +5,149 @@ format: pdf
 editor: visual
 ---
 
-# Install CAMAN
+# Steps to be taken
+
+## Install CAMAN
 ```{r}
 library(CAMAN)
 ```
 
-# Assess over dispersion
+## Assess over dispersion
 
 - approximate the original binomial distribution with the poisson distribution with parameter n×p. This can be done if n is large (e.g. n>100) and p is small such that n×p <10. Here n×p is essentially the number of successes in the binomial distribution. 
 - We can then assess overdispersion by calculating the variance of the observed number of successes and comparing it to the model variance (n×p). If the observed variance is much larger than the model variance, then we can conclude that there is overdispersion.
 
-# Fit fmm - VEM - estimate the NPMLE of the number of support points
+## Fit fmm - VEM - estimate the NPMLE of the number of support points
 
-# Assess gradient function to make sure that it is the NPMLE
+## Assess gradient function to make sure that it is the NPMLE
 
-# Classify data into components/clusters
+## Classify data into components/clusters
 
-# Test covariate on the components
+## Test covariate on the components
+
+# Data analysis
+
+## Load libraries
+```{r}
+library(CAMAN)
+library(tidyverse)
+library(haven)
+library(here)
+library(table1)
+
+datadir <- here("assignments", "finite-mixture")
+```
+
+## Data exploration
+
+```{r explore data}
+hemo <- read_sas(here(datadir, "hemodialysismix.sas7bdat"))
+
+# decapitalize column names
+names(hemo) <- tolower(names(hemo))
+
+# percentage of sex missing
+round(sum(is.na(hemo$sex)) / nrow(hemo) * 100, 2)
+# 3.64
+
+str(hemo)
+summary(hemo)
+
+# add sex_male, with 1 if sex = 1, 0 otherwise
+hemo <- hemo |> 
+  mutate(sex_male = ifelse(sex == 1, 1, 0))
+
+# add perc, which is the percentage of observing adequate iron stores
+hemo <- hemo |> 
+  mutate(perc = nriron / nr)
+
+```
+```{r binom response}
+# table1
+table1(~ factor(sex_male) + age + factor(nriron) + factor(nr), data = hemo)
+
+# assume NRIRON in the population follows a single binomial distribution
+pi <- sum(hemo$nriron) / sum(hemo$nr)
+overdispersion <- var(hemo$perc) / (pi * (1 - pi))
+# this way doesn't work
+
+
+## fit a logsitic regression model, and calculate the overdispersion
+logit <- glm(perc ~ age + sex_male, data = hemo, family = binomial)
+
+# Compute Pearson residuals
+pearson_resid <- residuals(logit, type = "pearson")
+
+# Calculate Pearson's Chi-Square
+pearson_chi_sq <- sum(pearson_resid^2)
+
+# Number of observations
+n <- nrow(hemo)
+
+# Number of parameters
+p <- length(coef(logit))
+
+# Degrees of Freedom
+dof <- n - p
+
+# Calculate the scale parameter
+scale_param <- sqrt(pearson_chi_sq / dof)
+scale_param
+```
+
+```{r poisson response}
+## overdispersion
+round(var(hemo$nriron) / mean(hemo$nriron), 2)
+```
+## NPMLE caman
+
+```{r poisson outcome}
+# prepare data to fit VEM. from hemo create hemo_em  with nriron and frequency columns
+hemo_em <- hemo |> 
+  group_by(nriron) |>
+  summarise(frequency = n())
+
+# convert nriorn to integer
+hemo_em$nriron <- as.integer(hemo_em$nriron)
+
+# mixalg only accepts data.frame
+hemo_em <- as.data.frame(hemo_em)  # Converts tibble to data.frame
+
+# fit VEM with hemo_em
+set.seed(123)
+nplme <- mixalg(obs = "nriron", weights = "frequency", family = "poisson", data = hemo_em,
+                acc = 10^(-3), numiter = 50000, startk = 50)
+summary(nplme)
+
+nplme@classification
+table(nplme@classification)
+```
+```{r binom outcome}
+# fit VEM with hemo
+hemo <- hemo |> 
+  mutate(nriron = as.integer(nriron), nr = as.integer(nr))
+
+hemo <- as.data.frame(hemo)
+
+set.seed(123)
+nplm <- mixalg(obs = "nriron", pop.at.risk = "nr", family = "binomial", 
+               data = hemo, acc = 10^(-6), numiter = 50000, startk = 10)
+summary(nplm)
+
+nplm@classification
+table(nplm@classification)
+
+# reduce to 3 components and refit
+em <- mixalg.EM(obs = "nriron", pop.at.risk = "nr", family = "binomial", 
+                data = hemo, t = c(0.5238,0.3992,0.0770), p = c(1, 1, 1))
+# log likelihood doesn't change
+
+## classification
+em@classification
+table(em@classification)
+
+dt <- as.data.frame(round(cbind(hemo$nriron, em@prob, em@classification),digits = 4))
+
+names(dt) <- c("Nriron", "Post_1", "Post_2", "Post_3", "class")
+
+```
